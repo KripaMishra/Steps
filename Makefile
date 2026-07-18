@@ -1,4 +1,4 @@
-PYTHON ?= python
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python; fi)
 
 .PHONY: demo demo-cli test lint evaluate up up-full down ingest-demo
 
