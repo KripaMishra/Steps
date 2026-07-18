@@ -1,0 +1,137 @@
+{
+  "corpus_version": "2026-07-18.demo-v1",
+  "records": [
+    {
+      "id": 1001,
+      "chunk_id": "programming-model-kernels",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Kernels",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#kernels",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "A CUDA kernel is a function launched for parallel execution on the GPU. Host code specifies a grid and block configuration, and each GPU thread runs the kernel body with its own thread and block indices."
+    },
+    {
+      "id": 1002,
+      "chunk_id": "programming-model-thread-hierarchy",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Thread hierarchy",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-hierarchy",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "CUDA organizes threads into blocks and blocks into a grid. Threads in one block can cooperate through shared memory and block-level synchronization, while a kernel launch may contain many independent blocks."
+    },
+    {
+      "id": 1003,
+      "chunk_id": "memory-hierarchy-overview",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Memory hierarchy",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#memory-hierarchy",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "CUDA exposes several memory spaces with different scope and performance characteristics. Registers are private to a thread, shared memory is visible within a block, and global memory is visible to threads across the grid and persists across kernel launches."
+    },
+    {
+      "id": 1004,
+      "chunk_id": "asynchronous-streams",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Asynchronous concurrent execution",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "A CUDA stream is an ordered sequence of GPU operations. Operations in one stream execute in issue order, while independent work in different streams may overlap when dependencies and device capabilities allow it."
+    },
+    {
+      "id": 1005,
+      "chunk_id": "unified-memory-managed",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Unified memory programming",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#um-unified-memory-programming-hd",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "Unified Memory provides managed allocations that can be accessed by CPU and GPU code through a shared address range. The CUDA runtime and driver coordinate migration and placement, although applications may still need advice or prefetching for predictable performance."
+    },
+    {
+      "id": 1006,
+      "chunk_id": "occupancy-definition",
+      "title": "CUDA C++ Best Practices Guide",
+      "section": "Occupancy",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "Occupancy compares active warps on a multiprocessor with the maximum active warps supported there. Register use, shared-memory use, and threads per block constrain occupancy, but maximum occupancy alone does not guarantee maximum performance."
+    },
+    {
+      "id": 1007,
+      "chunk_id": "runtime-error-handling",
+      "title": "CUDA Runtime API",
+      "section": "Error handling",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__ERROR.html",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "CUDA Runtime API calls return cudaError_t status values. Applications can inspect an error with cudaGetErrorString, and kernel launch errors are commonly checked with cudaGetLastError followed by an appropriate synchronization call to surface asynchronous execution failures."
+    },
+    {
+      "id": 1008,
+      "chunk_id": "compute-capability",
+      "title": "CUDA C++ Programming Guide",
+      "section": "Compute capability",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "A GPU's compute capability identifies the CUDA architecture features available to kernels. Code generation targets specific virtual and real architectures, so deployment choices should account for the compute capabilities of the destination GPUs."
+    },
+    {
+      "id": 1009,
+      "chunk_id": "page-locked-memory-transfers",
+      "title": "CUDA C++ Best Practices Guide",
+      "section": "Pinned memory",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#pinned-memory",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "Page-locked host memory enables higher-throughput host-to-device transfers and is required for asynchronous CPU-GPU copies. Because excessive pinning reduces memory available to the operating system, applications should allocate pinned buffers deliberately."
+    },
+    {
+      "id": 1010,
+      "chunk_id": "shared-memory-tiling",
+      "title": "CUDA C++ Best Practices Guide",
+      "section": "Shared memory",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "Threads in a block can use shared memory as a programmer-managed working area. Tiling data in shared memory can reduce repeated global-memory traffic, but layouts should avoid unnecessary bank conflicts and must stay within the block's resource limit."
+    },
+    {
+      "id": 1011,
+      "chunk_id": "runtime-events-timing",
+      "title": "CUDA Runtime API",
+      "section": "Event management",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__EVENT.html",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "CUDA events are markers recorded into streams. They can express stream dependencies, let host code query or wait for progress, and measure elapsed GPU time between recorded events without relying on a CPU wall clock."
+    },
+    {
+      "id": 1012,
+      "chunk_id": "nvcc-compilation-workflow",
+      "title": "NVCC Compiler Driver",
+      "section": "Compilation workflow",
+      "source_url": "https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#nvcc-compilation-workflow",
+      "source_date": "2026-07-18",
+      "license": "MIT for this project-authored summary; linked NVIDIA material is not relicensed",
+      "provenance": "Original project-authored factual summary based on the linked NVIDIA page; no documentation excerpt is redistributed.",
+      "content": "The nvcc compiler driver separates device code from host code, compiles the device portions for CUDA targets, and delegates host compilation to a supported host compiler. Its command-line architecture options control generated GPU code targets."
+    }
+  ]
+}
