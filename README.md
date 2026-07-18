@@ -1,206 +1,142 @@
-# CUDA Documentation RAG
+# CUDA Documentation Copilot
 
-Retrieval-Augmented Generation (RAG) over NVIDIA CUDA documentation.
+A citation-first CUDA documentation demo with two deliberately separate paths:
 
-The application crawls and chunks CUDA docs, indexes them in a hybrid Milvus + Elasticsearch store, and answers questions with Google Gemini through LangChain's OpenAI-compatible client.
+- **Demo mode (default):** a small, provenance-labeled fixture corpus, deterministic local retrieval, and an offline extractive answer when no Gemini key is present.
+- **Full mode:** the existing DPR + T5, Milvus, Elasticsearch, and Gemini pipeline for operators who want to crawl and index their own permitted corpus.
 
-Repository: <https://github.com/KripaMishra/cuda-documentation-rag>
+The project does not claim production readiness or measured answer accuracy. Every answer is expected to expose its supporting sources; unsupported questions return an explicit insufficient-context response.
 
-## At a glance
+## Run the demo
 
-| Layer | Technology | Responsibility |
-| --- | --- | --- |
-| Crawl | Scrapy | Collect NVIDIA CUDA documentation |
-| Clean/chunk | Python, scikit-learn | Normalize text and create chunks |
-| Vector search | Milvus + DPR | Semantic retrieval |
-| Keyword search | Elasticsearch BM25 | Full-text retrieval |
-| Answer generation | Gemini + `langchain-openai` | Grounded response generation |
-| UI | Streamlit | Interactive query interface |
-
-Gemini is used for **answer generation only**. The existing DPR embeddings, T5 query expansion, Milvus schema, Elasticsearch index, and hybrid ranking remain unchanged.
-
-## Architecture
-
-```text
-NVIDIA CUDA docs
-      │
-      ▼
-Scrapy crawler → cleaning → semantic chunking
-                                  │
-                                  ▼
-                         DPR embeddings
-                            ┌─────┴─────┐
-                            ▼           ▼
-                         Milvus   Elasticsearch
-                            └─────┬─────┘
-                                  ▼
-                          hybrid retrieval
-                                  ▼
-                   Gemini via ChatOpenAI compatibility API
-                                  ▼
-                             answer / UI
-```
-
-## Requirements
-
-- Python 3.11+
-- Milvus available at `localhost:19530` by default
-- Elasticsearch available at `localhost:9200` by default
-- Google AI Studio Gemini API key
-- Enough disk and memory for DPR/T5 model downloads
-
-## Quick start
+Python 3.11 or newer is required.
 
 ```bash
 git clone https://github.com/KripaMishra/cuda-documentation-rag.git
 cd cuda-documentation-rag
-
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-demo.txt
+make demo
 ```
 
-Configure the environment:
+Open <http://localhost:8501>. No API key, database, GPU model, or crawl is needed.
 
-```bash
-cp .env.example .env
-$EDITOR .env
-set -a
-source .env
-set +a
-```
+Try these scripted questions:
 
-At minimum, set:
-
-```text
-GEMINI_API_KEY=your-google-ai-studio-key
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-```
-
-`.env` is ignored by Git. Never commit an API key.
-
-## Run the pipeline
-
-### 1. Crawl CUDA documentation
-
-```bash
-cd nvidia_docs
-scrapy crawl nvidia_docs -O nvidia_docs/spiders/output.json
-cd ..
-```
-
-The crawler depth is controlled by `nvidia_docs/nvidia_docs/settings.py` (`DEPTH_LIMIT=1` by default).
-
-### 2. Clean the crawl output
-
-```bash
-python components/s1_data_cleaning.py \
-  --file_path nvidia_docs/nvidia_docs/spiders/output.json \
-  --output_path result/cleaned_data.txt
-```
-
-### 3. Create semantic chunks
-
-```bash
-python components/s2_semantic_chunking.py \
-  --file_path result/cleaned_data.txt \
-  --similarity_threshold 0.15 \
-  --max_chunk_length 400 \
-  --output_json_file result/preprocessed_chunks.json \
-  --micro_json_file result/micro_chunks.json \
-  --micro_threshold 100
-```
-
-### 4. Start Milvus and ingest documents
-
-If using the bundled Milvus helper:
-
-```bash
-bash standalone_embed.sh start
-```
-
-Then ingest the regular chunks into Milvus and Elasticsearch:
-
-```bash
-python components/s3_data_ingestion.py \
-  --input_path result/preprocessed_chunks.json \
-  --collection_name Test_collection \
-  --es_host localhost --es_port 9200 \
-  --milvus_host localhost --milvus_port 19530
-```
-
-### 5. Query the RAG system
+1. `How do CUDA streams allow work to overlap?`
+2. `What factors can limit CUDA occupancy?`
+3. `Why is pinned host memory used for asynchronous copies?`
 
 CLI:
 
 ```bash
-python -m components.s5_rag_llm \
-  "What is CUDA used for?" \
-  --top_k 3
+RAG_MODE=demo python -m components.s5_rag_llm \
+  "How do CUDA streams allow work to overlap?" --top_k 3
 ```
 
-Streamlit:
+The CLI prints JSON and writes nothing unless `--file_path result/answer.json` is supplied.
+
+## What the response contains
+
+Both modes return the same JSON contract:
+
+```text
+query, answer, sources[], mode, latency,
+retrieval_metadata, model, corpus_version, insufficient_context
+```
+
+Each source includes its URL, title, section, chunk/document ID, retrieval score, excerpt, source date, and provenance. Latency values are milliseconds measured in the current process; they are diagnostics, not a benchmark. The Streamlit UI shows citation cards and keeps retrieval details in a collapsed trace.
+
+## Generation behavior
+
+Demo mode uses Gemini through Google's OpenAI-compatible endpoint when `GEMINI_API_KEY` is configured. Without a key, it returns a clearly labeled deterministic extract from the retrieved project-authored summaries. Full mode requires Gemini configuration.
+
+Gemini is an external paid/quota-limited service. Review current Google AI pricing, quotas, data-use terms, and regional availability before enabling it. Query, context, generation-token, and request-timeout limits are configurable.
+
+## Architecture
+
+```text
+                         ┌─ demo fixture → local TF-IDF retrieval ─┐
+question → mode router ──┤                                        ├→ response contract → CLI / Streamlit
+                         └─ T5 expansion → BM25 + DPR/Milvus ──────┘
+                                                    │
+                                  Gemini if configured; demo otherwise uses extractive fallback
+```
+
+Demo mode does not import or initialize Torch, Transformers, Milvus, or Elasticsearch. Full mode retains the existing Milvus fields (`id`, `embedding`, `content`), Elasticsearch content search, and hybrid score formula. Provenance metadata is added to Elasticsearch and merged into the response after retrieval.
+
+## Docker
+
+Default demo:
 
 ```bash
-streamlit run main.py
+docker compose up --build app
 ```
+
+Full profile (requires `GEMINI_API_KEY` and operator-managed ingestion):
+
+```bash
+docker compose --profile full up --build app-full
+```
+
+The demo is served on port 8501 and full mode on 8502. Milvus and Elasticsearch have no host-published ports and share an internal Compose network. For public exposure, place the app behind an authenticated, rate-limited TLS reverse proxy; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Configuration
 
-All runtime settings are read from environment variables. See `.env.example` for the complete template.
+Copy `.env.example` to `.env` for local values. `.env` is ignored; never commit credentials.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | required | Google AI Studio credential |
+| `RAG_MODE` | `demo` | `demo` or `full` |
+| `GEMINI_API_KEY` | unset | Enables Gemini in demo; required in full |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
-| `GEMINI_BASE_URL` | Google OpenAI-compatible endpoint | Gemini API base URL |
-| `MILVUS_HOST` / `MILVUS_PORT` | `localhost` / `19530` | Milvus connection |
-| `MILVUS_COLLECTION` | `Test_collection` | Milvus collection |
-| `ELASTICSEARCH_HOST` / `ELASTICSEARCH_PORT` | `localhost` / `9200` | Elasticsearch connection |
-| `ELASTICSEARCH_INDEX` | `documents` | Elasticsearch index |
-| `RAG_RESULT_DIR` | `result` | Generated result directory |
-| `RAG_CONTEXT_MAX_CHARS` | `12000` | Maximum context sent to Gemini |
+| `GEMINI_BASE_URL` | Google compatibility URL | API endpoint |
+| `RAG_QUERY_MAX_CHARS` | `500` | Maximum normalized query length |
+| `RAG_TOP_K_MAX` | `10` | Maximum requested sources |
+| `RAG_CONTEXT_MAX_CHARS` | `12000` | Maximum generation context |
+| `RAG_GENERATION_MAX_TOKENS` | `512` | Gemini output limit |
+| `RAG_REQUEST_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
+| `RAG_DEMO_FIXTURE_PATH` | `demo/fixtures/cuda_docs.json` | Demo corpus path |
+| `MILVUS_*`, `ELASTICSEARCH_*` | local defaults | Full-mode stores and index |
 
-## Tests and verification
+See [.env.example](.env.example) for every variable.
 
-Run the offline suite:
+## Full crawl-to-index mode
+
+Full mode downloads large DPR/T5 models and requires Milvus, Elasticsearch, and a Gemini key. Read [docs/FULL_MODE.md](docs/FULL_MODE.md) before crawling or ingesting any data. Generated crawl and result files are ignored and are not distributed.
+
+## Tests and evaluation
 
 ```bash
-python -m pytest
+python -m pip install -r requirements-demo.txt pytest
+make test
+make lint
+make evaluate
 ```
 
-The tests mock Gemini and retrieval, so they do not require API credentials, Milvus, Elasticsearch, or model downloads.
+`make evaluate` runs six offline factual, ambiguous, and unanswerable questions. Its reported rates describe only that tiny checked fixture set and must not be generalized to CUDA documentation quality.
 
-For a live smoke test, start both data services, export `GEMINI_API_KEY`, ingest documents, and run the CLI command above. Results are written under `result/`, which is ignored for new runtime files.
+## Data, limitations, and safety
 
-## Repository layout
+The demo fixture contains 12 original project-authored summaries with links to NVIDIA pages. It does not redistribute an NVIDIA documentation dataset or relicense linked NVIDIA material. Read [DATA_PROVENANCE.md](DATA_PROVENANCE.md) before modifying the corpus.
 
-```text
-components/
-├── settings.py          # environment-backed configuration
-├── s1_data_cleaning.py  # crawl-output cleaning
-├── s2_semantic_chunking.py
-├── s3_data_ingestion.py # Milvus + Elasticsearch ingestion
-├── s4_data_retrieval.py # hybrid retrieval and reranking
-└── s5_rag_llm.py        # Gemini-backed answer generation
+Known limitations:
 
-nvidia_docs/              # Scrapy project
-notebooks/                # exploratory notebooks
-tests/                   # offline regression tests
-main.py                  # Streamlit entry point
-requirements.txt         # runtime and test dependencies
-.env.example             # safe configuration template
-```
+- The demo corpus is intentionally small and cannot answer broad CUDA questions.
+- Lexical retrieval does not understand all synonyms.
+- Gemini adds external cost, quota, availability, and privacy considerations.
+- Full mode is operationally heavy and has not been represented as production-ready.
+- Public deployments need authentication/rate limiting at a reverse proxy.
 
 ## Troubleshooting
 
-- **`GEMINI_API_KEY is required`**: export the key or source `.env` in the current shell.
-- **Milvus/Elasticsearch connection errors**: confirm both services are running and match the host/port variables.
-- **Slow first run**: DPR and T5 models are downloaded and loaded locally.
-- **No answer context**: rerun ingestion and confirm that the configured Milvus collection and Elasticsearch index contain documents.
-- **Generated files appearing in Git**: keep runtime output under `result/`; do not force-add ignored files.
+- **No sources:** ask one of the scripted questions or inspect the collapsed trace; unrelated questions intentionally return insufficient context.
+- **Gemini failure:** remove `GEMINI_API_KEY` to verify the offline demo, then check quota and endpoint settings without logging the key.
+- **Full-mode connection failure:** run `docker compose --profile full ps` and confirm service health and environment names.
+- **Slow full startup:** DPR/T5 downloads and service health checks can take time; demo mode avoids them.
+- **Docker port in use:** change only the host side of `8501:8501` or `8502:8501`.
 
-## Current boundaries
+## Contributing and license
 
-This repository intentionally keeps retrieval and storage stable while migrating answer generation to Gemini. Evaluation of answer quality, latency, and cost should be performed with a populated index and representative CUDA questions before production use.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Original project code and fixture summaries are available under the [MIT License](LICENSE); linked NVIDIA content remains under its own terms.
