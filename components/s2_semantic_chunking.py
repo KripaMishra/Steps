@@ -144,4 +144,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         raise
-# sampel useage: python Steps/components/s2_semantic_chunking.py --file_path /home/ubuntu/project/Steps/result/claened_data.txt --similarity_threshold 0.15 --max_chunk_length 400 --output_json_file Steps/result/preprocessed_chunks.json --micro_json_file Steps/result/micro_chunks.json --micro_threshold 100
+# Example: python components/s2_semantic_chunking.py --file_path result/cleaned_data.txt --similarity_threshold 0.15 --max_chunk_length 400 --output_json_file result/preprocessed_chunks.json --micro_json_file result/micro_chunks.json --micro_threshold 100

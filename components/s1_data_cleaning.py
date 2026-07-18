@@ -122,4 +122,4 @@ if __name__ == "__main__":
     processor.split_sentences()
 
 
-# sample use: python data_cleaning.py --file_path /home/ubuntu/project/Steps/nvidia_docs/nvidia_docs/spiders/output.json --output_path /home/ubuntu/project/Steps/result/claened_data.txt
+# Example: python components/s1_data_cleaning.py --file_path nvidia_docs/nvidia_docs/spiders/output.json --output_path result/cleaned_data.txt
