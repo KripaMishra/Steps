@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible CUDA Documentation Copilot problem
+title: "bug: "
+labels: [bug]
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [demo, full]
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: Remove credentials and sensitive local paths.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python, OS, container versions, and sanitized configuration names.
+  - type: markdown
+    attributes:
+      value: "Do not include API keys, secrets, or data you cannot redistribute. Report vulnerabilities through SECURITY.md instead."

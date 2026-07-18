@@ -1,0 +1,44 @@
+[
+  {
+    "id": "streams",
+    "question": "How do CUDA streams allow work to overlap?",
+    "expected_source_ids": ["asynchronous-streams"],
+    "expected_source_urls": ["https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution"],
+    "expect_insufficient_context": false
+  },
+  {
+    "id": "occupancy",
+    "question": "What factors can limit CUDA occupancy?",
+    "expected_source_ids": ["occupancy-definition"],
+    "expected_source_urls": ["https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy"],
+    "expect_insufficient_context": false
+  },
+  {
+    "id": "pinned-memory",
+    "question": "Why is pinned host memory used for asynchronous copies?",
+    "expected_source_ids": ["page-locked-memory-transfers"],
+    "expected_source_urls": ["https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#pinned-memory"],
+    "expect_insufficient_context": false
+  },
+  {
+    "id": "events",
+    "question": "What can CUDA events be used for?",
+    "expected_source_ids": ["runtime-events-timing"],
+    "expected_source_urls": ["https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__EVENT.html"],
+    "expect_insufficient_context": false
+  },
+  {
+    "id": "ambiguous",
+    "question": "How can I make everything faster?",
+    "expected_source_ids": [],
+    "expected_source_urls": [],
+    "expect_insufficient_context": true
+  },
+  {
+    "id": "unanswerable",
+    "question": "Who won the international football tournament?",
+    "expected_source_ids": [],
+    "expected_source_urls": [],
+    "expect_insufficient_context": true
+  }
+]

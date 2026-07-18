@@ -1,0 +1,87 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        REQUIREMENTS: requirements-demo.txt
+    environment:
+      RAG_MODE: demo
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    networks: [public]
+
+  app-full:
+    profiles: [full]
+    build:
+      context: .
+      args:
+        REQUIREMENTS: requirements.txt
+    environment:
+      RAG_MODE: full
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-documents}
+    ports:
+      - "8502:8501"
+    depends_on:
+      milvus:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public, backend]
+
+  milvus:
+    profiles: [full]
+    image: milvusdb/milvus:v2.5.4
+    command: ["milvus", "run", "standalone"]
+    security_opt: ["seccomp:unconfined"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: local
+    expose: ["19530", "9091"]
+    volumes:
+      - milvus-data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+    restart: unless-stopped
+    networks: [backend]
+
+  elasticsearch:
+    profiles: [full]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    expose: ["9200"]
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      start_period: 45s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+networks:
+  public:
+  backend:
+    internal: true
+
+volumes:
+  milvus-data:
+  elasticsearch-data:

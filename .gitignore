@@ -1,37 +1,48 @@
-# Ignore Python cache files
+# Python and test caches
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Ignore Jupyter notebook checkpoints
-.ipynb_checkpoints/
-
-# Ignore environment files
-env/
-venv/
+# Virtual environments and local configuration
 .venv/
+venv/
+env/
 .env
 .env.*
 !.env.example
 
-# Ignore model files
+# Models and package caches
+.cache/
+.huggingface/
 *.h5
 *.pt
 
-# Ignore runtime data and generated artifacts
+# Runtime output and generated crawl data
 /result/
 *.db.lock
 nvidia_docs/**/output.json
-.pytest_cache/
-.coverage
 
-# Ignore specific directories and files
-volumes/*
+# Local databases and Compose volumes
+/volumes/
+/.compose-data/
+*.db-shm
+*.db-wal
 milvus_demo_test.db
-clean_text_3.txt
-embedEtcd.yaml
-user.yaml
 StepsDB.db
 embedEtcd.yaml
-test_files
-notebooks
+user.yaml
 
+# Local planning and analysis artifacts
+/.pi-subagents/
+/.code-review-graph/
+
+# Notebook/editor artifacts
+.ipynb_checkpoints/
+
+# Historical local scratch files
+clean_text_3.txt
+/test_files/
