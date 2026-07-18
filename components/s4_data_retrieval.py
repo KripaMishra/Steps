@@ -3,9 +3,11 @@ from typing import List, Optional
 import logging
 import argparse
 from datetime import datetime
+from pathlib import Path
 import torch
 from elasticsearch import Elasticsearch
 from pymilvus import connections, Collection
+from components.settings import load_settings
 from transformers import (
     DPRQuestionEncoder,
     DPRQuestionEncoderTokenizer,
@@ -30,19 +32,36 @@ collection = None
 es = None
 
 class CustomRetrieval:
-    def __init__(self):
-        pass
+    def __init__(self, settings=None):
+        self.settings = settings or load_settings(require_gemini=False)
+        self.es_index = self.settings.elasticsearch_index
 
-    def setup(self):
+    def setup(
+        self,
+        *,
+        milvus_host=None,
+        milvus_port=None,
+        es_host=None,
+        es_port=None,
+        collection_name=None,
+        es_index=None,
+    ):
         global collection, es
+        milvus_host = milvus_host or self.settings.milvus_host
+        milvus_port = milvus_port or self.settings.milvus_port
+        es_host = es_host or self.settings.elasticsearch_host
+        es_port = es_port or self.settings.elasticsearch_port
+        collection_name = collection_name or self.settings.collection_name
+        self.es_index = es_index or self.settings.elasticsearch_index
         try:
-            connections.connect("default", host="localhost", port="19530")
-            es = Elasticsearch([{'host': 'localhost', 'port': 9200, 'scheme': "http"}])
-            collection = Collection("Test_collection")
+            connections.connect("default", host=milvus_host, port=milvus_port)
+            es = Elasticsearch([{'host': es_host, 'port': es_port, 'scheme': "http"}])
+            collection = Collection(collection_name)
             collection.load()
             logger.info("Setup complete: Elasticsearch and Milvus collection initialized.")
         except Exception as e:
             logger.error(f"Setup failed: {e}")
+            raise
 
     def encode_query(self, query):
         try:
@@ -58,7 +77,7 @@ class CustomRetrieval:
         global collection, es
         try:
             # BM25 search
-            es_response = es.search(index="documents", body={
+            es_response = es.search(index=self.es_index, body={
                 "query": {"match": {"content": query}},
                 "size": top_k
             })
@@ -202,7 +221,11 @@ class CustomRetrieval:
             # Generate a default file path if none is provided
             if file_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                file_path = f"Steps/result/query_results_{timestamp}.json"
+                file_path = self.settings.result_dir / f"query_results_{timestamp}.json"
+            else:
+                file_path = Path(file_path)
+            file_path = Path(file_path)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save the data to a JSON file
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -292,4 +315,4 @@ if __name__ == "__main__":
     main(args.query, args.top_k, args.file_path)
 
 
-# sample usage: python Steps/components/s4_data_retrieval.py "How do I install the Toolkit in a different location?" --top_k 5 --file_path "Steps/result/query_results/query_results.json"
+# Example: python components/s4_data_retrieval.py "How do I install the Toolkit in a different location?" --top_k 5 --file_path "result/query_results/query_results.json"

@@ -8,10 +8,21 @@ __pycache__/
 # Ignore environment files
 env/
 venv/
+.venv/
+.env
+.env.*
+!.env.example
 
 # Ignore model files
 *.h5
 *.pt
+
+# Ignore runtime data and generated artifacts
+/result/
+*.db.lock
+nvidia_docs/**/output.json
+.pytest_cache/
+.coverage
 
 # Ignore specific directories and files
 volumes/*

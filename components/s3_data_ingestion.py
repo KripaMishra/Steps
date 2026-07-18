@@ -120,4 +120,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         raise
-# sample usage: python Steps/components/s3_data_ingestion.py --input_path Steps/result/preprocessed_chunks.json --collection_name Test_collection --es_host localhost --es_port 9200 --milvus_host localhost --milvus_port 19530
+# Example: python components/s3_data_ingestion.py --input_path result/preprocessed_chunks.json --collection_name Test_collection --es_host localhost --es_port 9200 --milvus_host localhost --milvus_port 19530

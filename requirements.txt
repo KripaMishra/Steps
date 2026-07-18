@@ -1,20 +1,32 @@
-scrapy
-bs4 
-langchain_experimental 
-langchain_openai
-gpt4all 
-pymilvus
-pymilvus[model]
-rank_bm25
-faiss-cpu
-nltk
-torch
-TensorFlow >= 2.0
-Flax 
-numpy
-transformers
-elasticsearch
-sentence_transformers
-SentencePiece
-nltk
-streamlit 
+# Crawling and text processing
+scrapy>=2.11,<3
+beautifulsoup4>=4.12,<5
+itemadapter>=0.9,<1
+nltk>=3.9,<4
+numpy>=1.26,<3
+scikit-learn>=1.4,<2
+
+# Retrieval and storage
+pymilvus[model]>=2.5,<3
+elasticsearch>=8,<10
+rank-bm25>=0.2,<1
+faiss-cpu>=1.8,<2
+
+# Embedding and local model utilities
+sentence-transformers>=3,<6
+transformers>=4.45,<6
+torch>=2.2,<3
+gpt4all>=2,<3
+sentencepiece>=0.2,<1
+
+# Gemini through Google's OpenAI-compatible API
+langchain==1.3.13
+langchain-core==1.4.9
+langchain-openai==1.3.5
+openai>=1.109.1,<3
+langchain-experimental>=0.4,<1
+langchain-community>=0.3,<1
+
+# Application and tests
+streamlit>=1.37,<2
+pytest>=8,<10
