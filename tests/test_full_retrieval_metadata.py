@@ -4,8 +4,22 @@ from components.settings import load_settings
 
 class FakeCollection:
     def query(self, **kwargs):
-        assert kwargs["output_fields"] == ["id", "content"]
-        return [{"id": 2, "content": "Pinned memory supports asynchronous copies."}]
+        assert kwargs["output_fields"] == ["id", "content", "metadata"]
+        return [
+            {
+                "id": 2,
+                "content": "Pinned memory supports asynchronous copies.",
+                "metadata": {
+                    "source_url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/",
+                    "title": "CUDA C++ Programming Guide",
+                    "section": "Page-locked host memory",
+                    "chunk_id": "memory-pinned",
+                    "source_date": "2026-07-18",
+                    "corpus_version": "2026-07-18",
+                    "provenance": "Project-authored summary.",
+                },
+            }
+        ]
 
 
 class FakeElasticsearch:
@@ -40,7 +54,12 @@ def test_full_retrieval_uses_configured_index_and_preserves_metadata(monkeypatch
     monkeypatch.setattr(retrieval_module, "es", fake_es)
     settings = load_settings(
         require_gemini=False,
-        env={"RAG_MODE": "full", "ELASTICSEARCH_INDEX": "cuda-custom"},
+        env={
+            "RAG_MODE": "full",
+            "MILVUS_ENDPOINT": "https://cloud.example",
+            "MILVUS_TOKEN": "token-value",
+            "ELASTICSEARCH_INDEX": "cuda-custom",
+        },
     )
     retriever = retrieval_module.CustomRetrieval(settings=settings)
 
@@ -60,3 +79,16 @@ def test_full_retrieval_uses_configured_index_and_preserves_metadata(monkeypatch
             "provenance": "Project-authored summary.",
         }
     ]
+
+
+def test_full_retrieval_uses_milvus_provenance_without_elasticsearch(monkeypatch):
+    monkeypatch.setattr(retrieval_module, "collection", FakeCollection())
+    monkeypatch.setattr(retrieval_module, "es", None)
+    retriever = retrieval_module.CustomRetrieval(
+        settings=load_settings(require_gemini=False)
+    )
+
+    record = retriever.fetch_document_records([2])[0]
+
+    assert record["title"] == "CUDA C++ Programming Guide"
+    assert record["source_url"].startswith("https://docs.nvidia.com/")
