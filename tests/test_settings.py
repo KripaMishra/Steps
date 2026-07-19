@@ -26,10 +26,10 @@ def test_settings_use_demo_defaults_and_configured_backend_index():
     settings = load_settings(env={"GEMINI_API_KEY": "test-key"})
 
     assert settings.gemini_api_key == "test-key"
-    assert settings.gemini_model == "gemini-2.5-flash"
+    assert settings.gemini_model == "gemini-3.1-flash-lite"
     assert settings.gemini_base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
-    assert settings.milvus_host == "localhost"
-    assert settings.milvus_port == 19530
+    assert settings.milvus_endpoint is None
+    assert settings.milvus_token is None
     assert settings.elasticsearch_host == "localhost"
     assert settings.elasticsearch_port == 9200
     assert settings.collection_name == "Test_collection"
@@ -77,8 +77,22 @@ def test_query_and_top_k_are_validated_at_boundary():
         validate_top_k(True, settings)
 
 
-def test_full_mode_can_be_loaded_without_key_for_non_generation_tools():
-    settings = load_settings(require_gemini=False, env={"RAG_MODE": "full"})
+def test_full_mode_requires_cloud_milvus_credentials():
+    with pytest.raises(ConfigurationError, match="MILVUS_ENDPOINT and MILVUS_TOKEN"):
+        load_settings(require_gemini=False, env={"RAG_MODE": "full"})
+
+
+def test_full_mode_can_be_loaded_without_gemini_key_for_non_generation_tools():
+    settings = load_settings(
+        require_gemini=False,
+        env={
+            "RAG_MODE": "full",
+            "MILVUS_ENDPOINT": "https://cloud.example",
+            "MILVUS_TOKEN": "user:secret",
+        },
+    )
 
     assert settings.gemini_api_key is None
+    assert settings.milvus_endpoint == "https://cloud.example"
+    assert settings.milvus_token == "user:secret"
     assert replace(settings, elasticsearch_index="custom").elasticsearch_index == "custom"
