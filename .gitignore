@@ -41,6 +41,7 @@ user.yaml
 /.code-review-graph/
 
 # Notebook/editor artifacts
+notebooks/
 .ipynb_checkpoints/
 
 # Historical local scratch files
