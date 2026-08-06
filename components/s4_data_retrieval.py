@@ -1,4 +1,4 @@
-"""Existing Milvus + Elasticsearch hybrid retrieval used only in full mode."""
+"""Milvus + Elasticsearch hybrid retrieval used only in full mode."""
 
 from __future__ import annotations
 
@@ -7,9 +7,14 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
-from components.settings import load_settings, validate_query, validate_top_k
+from components.settings import (
+    ConfigurationError,
+    load_settings,
+    validate_query,
+    validate_top_k,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -17,163 +22,161 @@ logger = logging.getLogger(__name__)
 
 collection = None
 es = None
-_question_encoder = None
-_question_tokenizer = None
-_t5_tokenizer = None
-_t5_model = None
 
 
-def _question_components():
-    global _question_encoder, _question_tokenizer
-    if _question_encoder is None or _question_tokenizer is None:
-        from transformers import DPRQuestionEncoder, DPRQuestionEncoderTokenizer
+def _rrf_fuse(
+    lexical_results: list[tuple[str, float]],
+    dense_results: list[tuple[str, float]],
+    *,
+    lexical_weight: float = 0.5,
+    rrf_k: int = 60,
+) -> list[tuple[str, float]]:
+    """Combine rankings without pretending BM25 and vector scores share a scale."""
 
-        model = "facebook/dpr-question_encoder-single-nq-base"
-        _question_encoder = DPRQuestionEncoder.from_pretrained(model)
-        _question_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained(model)
-    return _question_encoder, _question_tokenizer
-
-
-def _expansion_components():
-    global _t5_tokenizer, _t5_model
-    if _t5_tokenizer is None or _t5_model is None:
-        from transformers import T5ForConditionalGeneration, T5Tokenizer
-
-        _t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
-        _t5_model = T5ForConditionalGeneration.from_pretrained("t5-base")
-    return _t5_model, _t5_tokenizer
+    scores: dict[str, float] = {}
+    for weight, ranked in (
+        (lexical_weight, lexical_results),
+        (1.0 - lexical_weight, dense_results),
+    ):
+        for rank, (document_id, _score) in enumerate(ranked, start=1):
+            scores[document_id] = scores.get(document_id, 0.0) + weight / (rrf_k + rank)
+    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
 
 class CustomRetrieval:
-    """Preserves the original full-mode hybrid search and ranking path."""
+    """Milvus retrieval with optional Elasticsearch rank fusion."""
 
     def __init__(self, settings=None):
         self.settings = settings or load_settings(require_gemini=False)
+        self.collection_name = self.settings.collection_name
         self.es_index = self.settings.elasticsearch_index
 
     def setup(
         self,
         *,
-        milvus_host=None,
-        milvus_port=None,
+        milvus_endpoint=None,
+        milvus_token=None,
         es_host=None,
         es_port=None,
         collection_name=None,
         es_index=None,
     ):
         global collection, es
-        from elasticsearch import Elasticsearch
-        from pymilvus import Collection, connections
+        from pymilvus import MilvusClient
 
-        milvus_host = milvus_host or self.settings.milvus_host
-        milvus_port = milvus_port or self.settings.milvus_port
+        milvus_endpoint = milvus_endpoint or self.settings.milvus_endpoint
+        milvus_token = milvus_token or self.settings.milvus_token
+        if not milvus_endpoint or not milvus_token:
+            raise ConfigurationError(
+                "MILVUS_ENDPOINT and MILVUS_TOKEN are required for Milvus setup"
+            )
         es_host = es_host or self.settings.elasticsearch_host
         es_port = es_port or self.settings.elasticsearch_port
         collection_name = collection_name or self.settings.collection_name
+        self.collection_name = collection_name
         self.es_index = es_index or self.settings.elasticsearch_index
-        connections.connect("default", host=milvus_host, port=milvus_port)
-        es = Elasticsearch([{"host": es_host, "port": es_port, "scheme": "http"}])
-        collection = Collection(collection_name)
-        collection.load()
-        logger.info("Setup complete: Elasticsearch and Milvus collection initialized")
+        collection = MilvusClient(uri=milvus_endpoint, token=milvus_token)
+        es = None
+        if self.settings.elasticsearch_enabled:
+            from elasticsearch import Elasticsearch
 
-    def encode_query(self, query):
-        import torch
+            try:
+                elasticsearch = Elasticsearch(
+                    [{"host": es_host, "port": es_port, "scheme": "http"}],
+                    max_retries=0,
+                    retry_on_timeout=False,
+                )
+                if not elasticsearch.options(request_timeout=1).ping():
+                    raise ConnectionError("Elasticsearch ping failed")
+                es = elasticsearch
+            except Exception as exc:
+                logger.warning("Elasticsearch unavailable; using Milvus only: %s", exc)
+        collection.load_collection(collection_name)
+        logger.info(
+            "Setup complete: Milvus collection initialized%s",
+            " with Elasticsearch" if es is not None else " without Elasticsearch",
+        )
 
-        encoder, tokenizer = _question_components()
+    def encode_query(self, query) -> list[float] | None:
         try:
-            input_ids = tokenizer(query, return_tensors="pt")["input_ids"]
-            with torch.no_grad():
-                embeddings = encoder(input_ids).pooler_output
-            return embeddings[0].numpy()
+            from components.gemini_embeddings import GeminiEmbedder
+
+            if not hasattr(self, "_embedder"):
+                self._embedder = GeminiEmbedder(self.settings)
+            return self._embedder.embed_query(query)
         except Exception as exc:
             logger.error("Query encoding failed: %s", exc)
             return None
 
     def hybrid_search(self, query, top_k=100, alpha=0.5):
-        """Run the original BM25 + DPR weighted score combination unchanged."""
+        """Fuse lexical and dense rankings with weighted reciprocal rank fusion."""
 
         global collection, es
         try:
-            es_response = es.search(
-                index=self.es_index,
-                body={"query": {"match": {"content": query}}, "size": top_k},
-            )
-            bm25_results = [
-                (hit["_id"], hit["_score"]) for hit in es_response["hits"]["hits"]
-            ]
+            bm25_results = []
+            if es is not None:
+                try:
+                    es_response = es.search(
+                        index=self.es_index,
+                        body={"query": {"match": {"content": query}}, "size": top_k},
+                    )
+                    bm25_results = [
+                        (str(hit["_id"]), hit.get("_score", 0.0))
+                        for hit in es_response["hits"]["hits"]
+                    ]
+                except Exception as exc:
+                    logger.warning("Elasticsearch search failed; using Milvus only: %s", exc)
+                    es = None
 
             query_vector = self.encode_query(query)
-            search_params = {
-                "metric_type": "L2",
-                "params": {"nprobe": 10},
-                "offset": 0,
-                "limit": top_k,
-                "with_distance": True,
-                "expr": None,
-                "output_fields": ["id", "content"],
-                "round_decimal": -1,
-                "rerank": {
-                    "metric_type": "IP",
-                    "params": {"rerank_topk": min(top_k * 2, 100)},
-                },
-            }
+            if query_vector is None:
+                return []
             milvus_results = collection.search(
-                data=[query_vector.tolist()],
+                collection_name=self.collection_name,
+                data=[query_vector],
                 anns_field="embedding",
-                param=search_params,
+                search_params={"metric_type": "IP", "params": {"nprobe": 16}},
                 limit=top_k,
+                output_fields=["id", "content"],
             )
-            dpr_results = [
-                (hit.entity.get("id"), hit.score) for hit in milvus_results[0]
+            dense_results = [
+                (str(hit["id"]), hit["distance"]) for hit in milvus_results[0]
             ]
-
-            all_ids = {document_id for document_id, _ in bm25_results + dpr_results}
-            combined_scores = {}
-            for document_id in all_ids:
-                bm25_score = next(
-                    (
-                        score
-                        for candidate_id, score in bm25_results
-                        if candidate_id == document_id
-                    ),
-                    0,
-                )
-                dpr_score = next(
-                    (
-                        score
-                        for candidate_id, score in dpr_results
-                        if candidate_id == document_id
-                    ),
-                    0,
-                )
-                combined_scores[document_id] = (
-                    alpha * bm25_score + (1 - alpha) * dpr_score
-                )
-
-            return sorted(
-                combined_scores.items(), key=lambda item: item[1], reverse=True
-            )[:top_k]
+            if not bm25_results:
+                return dense_results[:top_k]
+            return _rrf_fuse(bm25_results, dense_results, lexical_weight=alpha)[:top_k]
         except Exception as exc:
             logger.error("Hybrid search failed: %s", exc)
             return []
 
-    def _milvus_documents(self, doc_ids) -> dict[str, str]:
+    def _milvus_documents(self, doc_ids) -> dict[str, dict[str, Any]]:
         global collection
         valid_ids = [int(document_id) for document_id in doc_ids if document_id is not None]
         if not valid_ids:
             return {}
         results = collection.query(
-            expr=f"id in {valid_ids}", output_fields=["id", "content"]
+            collection_name=self.collection_name,
+            filter=f"id in {valid_ids}",
+            output_fields=["id", "content", "metadata"],
         )
-        return {str(result["id"]): result["content"] for result in results}
+        return {
+            str(result["id"]): {
+                "content": result["content"],
+                "metadata": result.get("metadata", {}),
+            }
+            for result in results
+        }
 
     def fetch_documents(self, doc_ids):
         """Compatibility helper returning document text in requested ID order."""
 
         try:
             documents = self._milvus_documents(doc_ids)
-            return [documents[str(document_id)] for document_id in doc_ids if str(document_id) in documents]
+            return [
+                documents[str(document_id)]["content"]
+                for document_id in doc_ids
+                if str(document_id) in documents
+            ]
         except Exception as exc:
             logger.error("Fetching documents failed: %s", exc)
             return []
@@ -208,12 +211,16 @@ class CustomRetrieval:
             key = str(document_id)
             if key not in documents:
                 continue
-            source = metadata.get(key, {})
+            milvus_document = documents[key]
+            source = {
+                **milvus_document["metadata"],
+                **metadata.get(key, {}),
+            }
             records.append(
                 {
                     "document_id": key,
                     "chunk_id": str(source.get("chunk_id", key)),
-                    "document": documents[key],
+                    "document": milvus_document["content"],
                     "source_url": source.get("source_url", ""),
                     "title": source.get("title", ""),
                     "section": source.get("section", ""),
@@ -225,72 +232,51 @@ class CustomRetrieval:
         return records
 
     def expand_query_with_keywords(self, query, num_expansions=3, num_keywords=5):
-        try:
-            model, tokenizer = _expansion_components()
-            input_ids = tokenizer(
-                f"expand query: {query}", return_tensors="pt"
-            ).input_ids
-            outputs = model.generate(
-                input_ids,
-                max_length=50,
-                num_return_sequences=num_expansions,
-                num_beams=num_expansions,
-                temperature=0.7,
-            )
-            expanded_queries = [
-                tokenizer.decode(output, skip_special_tokens=True) for output in outputs
-            ]
+        """Compatibility hook; Gemini embeddings search the original query directly."""
 
-            keyword_ids = tokenizer(
-                f"generate keywords for: {query}", return_tensors="pt"
-            ).input_ids
-            keyword_outputs = model.generate(
-                keyword_ids,
-                max_length=30,
-                num_return_sequences=1,
-                num_beams=num_keywords,
-                temperature=0.7,
-            )
-            keywords = tokenizer.decode(
-                keyword_outputs[0], skip_special_tokens=True
-            ).split()
-            return [
-                f"{expanded_query} {' '.join(keywords)}"
-                for expanded_query in [query] + expanded_queries
-            ]
-        except Exception as exc:
-            logger.error("Query expansion failed: %s", exc)
-            return []
+        del num_expansions, num_keywords
+        return [query]
 
     def retrieve_and_rerank(self, query, top_k=3):
         query = validate_query(query, self.settings)
         top_k = validate_top_k(top_k, self.settings)
         try:
-            expanded_queries = self.expand_query_with_keywords(query)
-            all_results = []
-            for expanded_query in expanded_queries:
-                all_results.extend(
-                    self.hybrid_search(expanded_query, top_k=top_k * 2)
-                )
+            expanded_queries = [query]
 
-            unique_results = list(dict.fromkeys(all_results))[:top_k]
+            candidate_limit = max(top_k * 5, 20)
+            candidate_scores: dict[str, float] = {}
+            for expanded_query in expanded_queries:
+                for document_id, score in self.hybrid_search(
+                    expanded_query, top_k=candidate_limit
+                ):
+                    key = str(document_id)
+                    candidate_scores[key] = candidate_scores.get(key, 0.0) + float(score)
+
+            ranked_candidates = sorted(
+                candidate_scores.items(), key=lambda item: (-item[1], item[0])
+            )
             records = {
                 record["document_id"]: record
                 for record in self.fetch_document_records(
-                    [document_id for document_id, _ in unique_results]
+                    [document_id for document_id, _ in ranked_candidates]
                 )
             }
-            results = []
-            for document_id, score in unique_results:
-                record = records.get(str(document_id))
-                if record:
-                    results.append({**record, "score": float(score)})
+            candidates = [
+                {**records[document_id], "score": score}
+                for document_id, score in ranked_candidates
+                if document_id in records
+            ]
 
+            retrieval_strategy = (
+                "rrf+gemini-embeddings" if es is not None else "gemini-embeddings"
+            )
             return {
                 "timestamp": datetime.now().isoformat(),
                 "original_query": query,
                 "expanded_queries": expanded_queries,
-                "results": results,
+                "candidate_count": len(candidates),
+                "retrieval_strategy": retrieval_strategy,
+                "results": candidates[:top_k],
             }
         except Exception as exc:
             logger.error("Retrieve and rerank failed: %s", exc)
@@ -305,81 +291,6 @@ class CustomRetrieval:
         with file_path.open("w", encoding="utf-8") as output:
             json.dump(query_data, output, ensure_ascii=False, indent=4)
         logger.info("Query results saved to %s", file_path)
-
-
-class QueryEnhancer:
-    def __init__(
-        self,
-        model_name: str = "t5-small",
-        device: str | None = None,
-    ) -> None:
-        import torch
-        from transformers import T5ForConditionalGeneration, T5Tokenizer
-
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
-        self.logger = logging.getLogger(__name__)
-
-    def expand_query_with_keywords(
-        self, query: str, num_expansions: int = 2, num_keywords: int = 5
-    ) -> List[str]:
-        try:
-            expanded_queries = self._generate_expanded_queries(query, num_expansions)
-            keywords = self._generate_keywords(query, num_keywords)
-            return [
-                f"{candidate} {' '.join(keywords)}"
-                for candidate in [query] + expanded_queries
-            ]
-        except Exception as exc:
-            self.logger.error("Query enhancement failed: %s", exc)
-            return [query]
-
-    def _generate_expanded_queries(self, query: str, num_expansions: int) -> List[str]:
-        input_ids = self.tokenizer(
-            f"Give {num_expansions} alternate ways to write this query: {query}",
-            return_tensors="pt",
-        ).input_ids.to(self.device)
-        outputs = self.model.generate(
-            input_ids,
-            max_length=100,
-            num_return_sequences=num_expansions,
-            num_beams=num_expansions,
-            temperature=0.3,
-            do_sample=True,
-        )
-        return [
-            self.tokenizer.decode(output, skip_special_tokens=True) for output in outputs
-        ]
-
-    def _generate_keywords(self, query: str, num_keywords: int) -> List[str]:
-        keyword_ids = self.tokenizer(
-            f"Add {num_keywords} keywords that summarize this query: {query}",
-            return_tensors="pt",
-        ).input_ids.to(self.device)
-        outputs = self.model.generate(
-            keyword_ids,
-            max_length=30,
-            num_return_sequences=1,
-            num_beams=num_keywords,
-            temperature=0.6,
-            do_sample=True,
-        )
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True).split()
-
-    def enhance_query(
-        self,
-        query: str,
-        num_expansions: int = 2,
-        num_keywords: int = 3,
-        max_length: Optional[int] = None,
-    ) -> List[str]:
-        enhanced_queries = self.expand_query_with_keywords(
-            query, num_expansions, num_keywords
-        )
-        if max_length:
-            return [candidate[:max_length] for candidate in enhanced_queries]
-        return enhanced_queries
 
 
 def main(query, top_k, file_path):

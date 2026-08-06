@@ -20,8 +20,8 @@ class Settings:
     gemini_api_key: str | None
     gemini_model: str
     gemini_base_url: str
-    milvus_host: str
-    milvus_port: int
+    milvus_endpoint: str | None
+    milvus_token: str | None
     elasticsearch_host: str
     elasticsearch_port: int
     collection_name: str
@@ -29,11 +29,14 @@ class Settings:
     result_dir: Path
     context_max_chars: int
     rag_mode: str = "demo"
+    elasticsearch_enabled: bool = False
     query_max_chars: int = 500
     top_k_max: int = 10
     generation_max_tokens: int = 512
     request_timeout_seconds: int = 60
     demo_fixture_path: Path = Path("demo/fixtures/cuda_docs.json")
+    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_dimensions: int = 768
 
 
 def _int_setting(env: Mapping[str, str], name: str, default: int) -> int:
@@ -47,11 +50,24 @@ def _int_setting(env: Mapping[str, str], name: str, default: int) -> int:
     return parsed
 
 
+def _bool_setting(env: Mapping[str, str], name: str, default: bool) -> bool:
+    value = env.get(name, str(default)).strip().lower()
+    if value in {"true", "1", "yes"}:
+        return True
+    if value in {"false", "0", "no"}:
+        return False
+    raise ConfigurationError(f"{name} must be true or false")
+
+
 def _required_text(env: Mapping[str, str], name: str, default: str) -> str:
     value = env.get(name, default).strip()
     if not value:
         raise ConfigurationError(f"{name} cannot be empty")
     return value
+
+
+def _optional_text(env: Mapping[str, str], name: str) -> str | None:
+    return env.get(name, "").strip() or None
 
 
 def load_settings(
@@ -71,16 +87,24 @@ def load_settings(
             "GEMINI_API_KEY is required to use the Gemini answer generator"
         )
 
+    milvus_endpoint = _optional_text(values, "MILVUS_ENDPOINT")
+    milvus_token = _optional_text(values, "MILVUS_TOKEN")
+    if rag_mode == "full" and (milvus_endpoint is None or milvus_token is None):
+        raise ConfigurationError(
+            "MILVUS_ENDPOINT and MILVUS_TOKEN are required in full mode"
+        )
+
     return Settings(
         gemini_api_key=api_key,
-        gemini_model=_required_text(values, "GEMINI_MODEL", "gemini-2.5-flash"),
+        gemini_model=_required_text(values, "GEMINI_MODEL", "gemini-3.1-flash-lite"),
         gemini_base_url=_required_text(values, "GEMINI_BASE_URL", GEMINI_BASE_URL),
-        milvus_host=_required_text(values, "MILVUS_HOST", "localhost"),
-        milvus_port=_int_setting(values, "MILVUS_PORT", 19530),
+        milvus_endpoint=milvus_endpoint,
+        milvus_token=milvus_token,
         elasticsearch_host=_required_text(values, "ELASTICSEARCH_HOST", "localhost"),
         elasticsearch_port=_int_setting(values, "ELASTICSEARCH_PORT", 9200),
         collection_name=_required_text(values, "MILVUS_COLLECTION", "Test_collection"),
         elasticsearch_index=_required_text(values, "ELASTICSEARCH_INDEX", "documents"),
+        elasticsearch_enabled=_bool_setting(values, "ELASTICSEARCH_ENABLED", False),
         result_dir=Path(_required_text(values, "RAG_RESULT_DIR", "result")),
         context_max_chars=_int_setting(values, "RAG_CONTEXT_MAX_CHARS", 12000),
         rag_mode=rag_mode,
@@ -90,6 +114,12 @@ def load_settings(
         request_timeout_seconds=_int_setting(values, "RAG_REQUEST_TIMEOUT_SECONDS", 60),
         demo_fixture_path=Path(
             _required_text(values, "RAG_DEMO_FIXTURE_PATH", "demo/fixtures/cuda_docs.json")
+        ),
+        gemini_embedding_model=_required_text(
+            values, "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"
+        ),
+        gemini_embedding_dimensions=_int_setting(
+            values, "GEMINI_EMBEDDING_DIMENSIONS", 768
         ),
     )
 

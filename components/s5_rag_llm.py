@@ -109,8 +109,8 @@ class RAGModel:
 
         if self.settings.rag_mode == "full":
             self.retriever.setup(
-                milvus_host=self.settings.milvus_host,
-                milvus_port=self.settings.milvus_port,
+                milvus_endpoint=self.settings.milvus_endpoint,
+                milvus_token=self.settings.milvus_token,
                 es_host=self.settings.elasticsearch_host,
                 es_port=self.settings.elasticsearch_port,
                 collection_name=self.settings.collection_name,
@@ -196,7 +196,7 @@ class RAGModel:
                     "candidate_count", len(retrieval_results.get("results", []))
                 )
             ),
-            "strategy": retrieval_results.get("retrieval_strategy", "hybrid-bm25-dpr"),
+            "strategy": retrieval_results.get("retrieval_strategy", "rrf"),
             "expanded_queries": retrieval_results.get("expanded_queries", []),
             "trace": [
                 {

@@ -15,8 +15,8 @@ def _settings(mode="full", api_key="test-key"):
         gemini_api_key=api_key,
         gemini_model="gemini-test",
         gemini_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        milvus_host="milvus",
-        milvus_port=19530,
+        milvus_endpoint="https://cloud.example",
+        milvus_token="token-value",
         elasticsearch_host="elasticsearch",
         elasticsearch_port=9200,
         collection_name="collection",
@@ -100,8 +100,8 @@ def test_full_mode_retrieves_once_and_returns_shared_response_contract():
     assert result["latency"]["total_ms"] >= 0
     assert len(llm.invoke_calls) == 1
     assert retriever.setup_kwargs == {
-        "milvus_host": "milvus",
-        "milvus_port": 19530,
+        "milvus_endpoint": "https://cloud.example",
+        "milvus_token": "token-value",
         "es_host": "elasticsearch",
         "es_port": 9200,
         "collection_name": "collection",
